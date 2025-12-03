@@ -232,7 +232,7 @@ def render_dataset_inspector_ai(data_ctx, accent: str):
         "primary_numeric": data_ctx.get("profile", {}).get("primary_numeric"),
     }
 
-    st.markdown("#### 🔍 Dataset Inspector AI")
+    st.markdown("#### Dataset Inspector AI")
     q = st.text_area(
         "Ask about model choices, patterns, or how this dataset could feed the five modules:",
         height=80,
@@ -290,7 +290,7 @@ def render_data_hub(accent: str):
     df = data_ctx.get("df")
 
     if df is None:
-        st.info("No dataset loaded. Modules will run on synthetic data / internal simulations.")
+        st.info("No dataset loaded. Modules will run on simulated data / internal simulations.")
         st.markdown("---")
         return
 
@@ -308,7 +308,7 @@ def render_data_hub(accent: str):
     )
 
     # Cleaning
-    st.markdown("#### 🧹 Dataset Cleaning")
+    st.markdown("#### Dataset Cleaning")
     cleaning_mode = st.selectbox(
         "Missing value strategy",
         ["None", "Drop rows with missing values", "Fill numeric NA with median", "Fill numeric NA with 0"],
@@ -323,7 +323,7 @@ def render_data_hub(accent: str):
         log_info(f"Cleaning mode applied: {cleaning_mode}")
 
     # Inspector AI
-    with st.expander("🔍 Dataset Inspector AI", expanded=False):
+    with st.expander("Dataset Inspector AI", expanded=False):
         render_dataset_inspector_ai(data_ctx, accent)
 
     st.markdown("---")
@@ -418,7 +418,7 @@ def main():
     accent = TAB_COLORS[tab_name]
 
     show_logs = st.sidebar.checkbox("Show system log")
-    agent_on = st.sidebar.checkbox("Enable AI Margin Analyst")
+    agent_on = st.sidebar.checkbox("Enable Agentic AI")
 
     inject_css(accent)
     init_data_ctx()
@@ -448,7 +448,7 @@ def main():
     if agent_on:
         try:
             client = get_openai_client()
-            st.markdown("### 🤖 Spectre.AI – Margin Analyst")
+            st.markdown("### Agentic AI – Margin Analyst")
             q = st.text_area(
                 "Ask about this module, its logic, or how to interpret its outputs:",
                 key="module_ai_q",
