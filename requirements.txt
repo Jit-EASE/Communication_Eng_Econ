@@ -1,18 +1,22 @@
 streamlit
 openai
+
 pandas
 numpy
-plotly
-networkx
 scipy
 
-# Excel + JSON parsing
+plotly
+networkx
+
+# Excel + JSON ingestion
 openpyxl
 xlrd
 
-# Image ops + Streamlit internals
+# Image + Streamlit internals
 pillow
 
-# Optional but recommended for stability and performance
+# HTTP stability
 requests
+
+# Useful for local development reloads (Streamlit Cloud ignores safely)
 watchdog
