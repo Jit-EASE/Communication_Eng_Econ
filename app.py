@@ -1,4 +1,4 @@
-# app.py — Stable Version (No Drag Curl) with Data Hub, Cleaning, Inspector AI, Logs
+# app.py — Stable Version (no overlays) with Data Hub, Cleaning, Inspector AI, Logs
 
 import streamlit as st
 from openai import OpenAI
@@ -15,7 +15,7 @@ from tabs import (
 )
 
 # ------------------------------------------
-# TAB MAP
+# TAB CONFIG
 # ------------------------------------------
 
 TAB_MAP = {
@@ -42,15 +42,23 @@ def init_log_ctx():
     if "logs" not in st.session_state:
         st.session_state["logs"] = []
 
-def _log(level, msg):
-    st.session_state["logs"].append({"level": level, "msg": msg})
+def _log(level: str, msg: str):
+    st.session_state["logs"].append({"level": level.upper(), "msg": msg})
 
-def log_info(msg): _log("INFO", msg)
-def log_warn(msg): _log("WARN", msg)
-def log_error(msg): _log("ERROR", msg)
+def log_info(msg: str):
+    _log("INFO", msg)
+
+def log_warn(msg: str):
+    _log("WARN", msg)
+
+def log_error(msg: str):
+    _log("ERROR", msg)
 
 def render_log_panel():
     logs = st.session_state.get("logs", [])
+    if not logs:
+        st.info("No log entries yet.")
+        return
     for entry in logs[-200:]:
         icon = "🟢" if entry["level"] == "INFO" else (
             "🟡" if entry["level"] == "WARN" else "🔴"
@@ -58,7 +66,7 @@ def render_log_panel():
         st.write(f"{icon} **{entry['level']}** — {entry['msg']}")
 
 # ------------------------------------------
-# OPENAI
+# OPENAI CLIENT
 # ------------------------------------------
 
 def get_openai_client():
@@ -72,10 +80,10 @@ def get_openai_client():
     return OpenAI()
 
 # ------------------------------------------
-# PLOTLY THEMES
+# PLOTLY CONFIG
 # ------------------------------------------
 
-def make_plotly_template(accent):
+def make_plotly_template(accent: str):
     pio.templates["spectre"] = go.layout.Template(
         layout=dict(
             paper_bgcolor="rgba(0,0,0,0)",
@@ -91,23 +99,25 @@ def make_plotly_template(accent):
                 spikemode="across",
                 spikecolor=accent,
                 gridcolor="rgba(255,255,255,0.1)",
+                zeroline=False,
             ),
             yaxis=dict(
                 showspikes=True,
                 spikemode="across",
                 spikecolor=accent,
                 gridcolor="rgba(255,255,255,0.1)",
+                zeroline=False,
             ),
         )
     )
     pio.templates.default = "spectre"
 
-def get_figure(accent):
+def get_figure(accent: str):
     make_plotly_template(accent)
     return go.Figure()
 
 # ------------------------------------------
-# DATA HUB + CLEANING + AI INSPECTOR
+# DATA HUB / CLEANING / INSPECTOR
 # ------------------------------------------
 
 def init_data_ctx():
@@ -128,25 +138,32 @@ def load_uploaded_file(uploaded):
     name = uploaded.name.lower()
     try:
         if name.endswith(".csv"):
-            return pd.read_csv(uploaded), uploaded.name
+            df = pd.read_csv(uploaded)
         elif name.endswith(".xlsx") or name.endswith(".xls"):
-            return pd.read_excel(uploaded, engine="openpyxl"), uploaded.name
+            df = pd.read_excel(uploaded, engine="openpyxl")
         elif name.endswith(".json"):
-            return pd.read_json(uploaded), uploaded.name
+            df = pd.read_json(uploaded)
         else:
-            st.error("Unsupported format (CSV, Excel, JSON).")
+            st.error("Unsupported format. Please upload CSV, Excel, or JSON.")
+            log_warn(f"Unsupported file type attempted: {uploaded.name}")
             return None, None
+
+        log_info(f"Loaded dataset '{uploaded.name}' with shape {df.shape}.")
+        return df, uploaded.name
     except Exception as e:
-        st.error(f"Error reading file: {e}")
-        log_error(str(e))
+        msg = f"Error reading file '{uploaded.name}': {e}"
+        st.error(msg)
+        log_error(msg)
         return None, None
 
-def profile_dataset(df):
+def profile_dataset(df: pd.DataFrame):
     numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-    datetime_cols = df.select_dtypes(include=["datetime64[ns]"]).columns.tolist()
+    datetime_cols = df.select_dtypes(include=["datetime64[ns]", "datetime64[ns, UTC]"]).columns.tolist()
     categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
 
     profile = {
+        "n_rows": df.shape[0],
+        "n_cols": df.shape[1],
         "n_numeric": len(numeric_cols),
         "n_datetime": len(datetime_cols),
         "n_categorical": len(categorical_cols),
@@ -155,77 +172,114 @@ def profile_dataset(df):
 
     return numeric_cols, datetime_cols, categorical_cols, profile
 
-def rebuild_data_ctx(df, name):
-    numeric, dt, cat, prof = profile_dataset(df)
+def rebuild_data_ctx(df: pd.DataFrame, name: str):
+    numeric_cols, datetime_cols, categorical_cols, profile = profile_dataset(df)
     return {
         "df": df,
         "name": name,
-        "numeric_cols": numeric,
-        "datetime_cols": dt,
-        "categorical_cols": cat,
-        "profile": prof,
+        "numeric_cols": numeric_cols,
+        "datetime_cols": datetime_cols,
+        "categorical_cols": categorical_cols,
+        "profile": profile,
     }
 
-def apply_cleaning(df, mode):
+def apply_cleaning(df: pd.DataFrame, mode: str):
     clean_df = df.copy()
+
+    if mode == "None":
+        log_info("No cleaning applied.")
+        return clean_df
 
     if mode == "Drop rows with missing values":
         clean_df = clean_df.dropna()
-        log_info("Dropped rows with NA.")
+        log_info("Dropped rows with any NA.")
 
-    elif mode == "Fill NA with median":
-        for col in clean_df.select_dtypes(include="number"):
-            clean_df[col] = clean_df[col].fillna(clean_df[col].median())
-        log_info("Filled NA with median.")
+    elif mode == "Fill numeric NA with median":
+        num_cols = clean_df.select_dtypes(include="number").columns
+        for c in num_cols:
+            med = clean_df[c].median()
+            clean_df[c] = clean_df[c].fillna(med)
+        log_info("Filled numeric NA with median.")
 
-    elif mode == "Fill NA with 0":
-        clean_df = clean_df.fillna(0)
-        log_info("Filled NA with 0.")
+    elif mode == "Fill numeric NA with 0":
+        num_cols = clean_df.select_dtypes(include="number").columns
+        for c in num_cols:
+            clean_df[c] = clean_df[c].fillna(0)
+        log_info("Filled numeric NA with 0.")
 
     return clean_df
 
-def render_dataset_inspector_ai(data_ctx, accent):
-    df = data_ctx["df"]
+def render_dataset_inspector_ai(data_ctx, accent: str):
+    df = data_ctx.get("df")
     if df is None:
-        st.info("Load a dataset first.")
+        st.info("Dataset Inspector AI: Load a dataset first.")
         return
 
-    client = get_openai_client()
+    client = None
+    try:
+        client = get_openai_client()
+    except Exception as e:
+        st.error("OpenAI client initialisation failed.")
+        log_error(f"OpenAI init failed (Inspector): {e}")
+        return
 
     summary = {
-        "name": data_ctx["name"],
+        "name": data_ctx.get("name"),
         "shape": df.shape,
-        "numeric_cols": data_ctx["numeric_cols"],
-        "categorical_cols": data_ctx["categorical_cols"],
-        "datetime_cols": data_ctx["datetime_cols"],
+        "numeric_cols": data_ctx.get("numeric_cols", []),
+        "categorical_cols": data_ctx.get("categorical_cols", []),
+        "datetime_cols": data_ctx.get("datetime_cols", []),
+        "primary_numeric": data_ctx.get("profile", {}).get("primary_numeric"),
     }
 
-    q = st.text_area("Dataset Inspector AI", "What models fit this data?")
-    if st.button("Ask Inspector"):
+    st.markdown("#### 🔍 Dataset Inspector AI")
+    q = st.text_area(
+        "Ask about model choices, patterns, or how this dataset could feed the five modules:",
+        height=80,
+        key="dataset_ai_q",
+    )
+
+    if st.button("Ask Dataset AI", key="dataset_ai_btn"):
+        if not q.strip():
+            st.warning("Enter a question first.")
+            return
         try:
             completion = client.chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=[
-                    {"role":"system","content":"You are a data-profiling expert."},
                     {
-                        "role":"user",
-                        "content": f"SUMMARY: {summary}\nQUESTION: {q}",
+                        "role": "system",
+                        "content": (
+                            "You are a data scientist helping an applied econometrician. "
+                            "Given a dataset summary, suggest suitable models and how it can be used "
+                            "for control systems, cycle analysis, network modelling, queueing, and policy tuning."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": f"DATA SUMMARY: {summary}\n\nQUESTION: {q}",
                     },
                 ],
             )
-            st.write(completion.choices[0].message.content)
+            answer = completion.choices[0].message.content
+            st.write(answer)
+            log_info("Dataset Inspector AI answered a query.")
         except Exception as e:
-            st.error(str(e))
-            log_error(str(e))
+            msg = f"Dataset Inspector AI error: {e}"
+            st.error(msg)
+            log_error(msg)
 
-def render_data_hub(accent):
+def render_data_hub(accent: str):
     init_data_ctx()
     data_ctx = st.session_state["data_ctx"]
 
-    st.markdown("### 📁 Data Hub – Global Dataset Loader")
+    st.markdown("### 📁 Data Hub — Global Dataset for All Modules")
 
-    uploaded = st.file_uploader("Upload dataset (CSV, Excel, JSON)",
-                                type=["csv","xlsx","xls","json"])
+    uploaded = st.file_uploader(
+        "Upload dataset (CSV, Excel, JSON)",
+        type=["csv", "xlsx", "xls", "json"],
+        key="global_uploader",
+    )
 
     if uploaded is not None:
         df, name = load_uploaded_file(uploaded)
@@ -233,109 +287,120 @@ def render_data_hub(accent):
             st.session_state["data_ctx"] = rebuild_data_ctx(df, name)
             data_ctx = st.session_state["data_ctx"]
 
-    df = data_ctx["df"]
+    df = data_ctx.get("df")
 
     if df is None:
-        st.info("No dataset loaded. Modules will use synthetic data.")
+        st.info("No dataset loaded. Modules will run on synthetic data / internal simulations.")
         st.markdown("---")
         return
 
-    st.success(f"Loaded dataset: **{data_ctx['name']}**")
-    st.dataframe(df.head(10))
+    # Preview
+    st.success(
+        f"Loaded dataset: **{data_ctx['name']}** "
+        f"({df.shape[0]} rows × {df.shape[1]} columns)"
+    )
+    st.dataframe(df.head(10), use_container_width=True)
 
-    st.markdown(f"**Numeric Columns:** {', '.join(data_ctx['numeric_cols']) or '_None_'}")
+    st.markdown(
+        f"**Numeric columns:** {', '.join(data_ctx['numeric_cols']) or '_None_'}  \n"
+        f"**Datetime columns:** {', '.join(data_ctx['datetime_cols']) or '_None_'}  \n"
+        f"**Categorical columns:** {', '.join(data_ctx['categorical_cols']) or '_None_'}"
+    )
 
     # Cleaning
-    st.markdown("#### Cleaning")
-    mode = st.selectbox("Choose cleaning mode",
-                        ["None","Drop rows with missing values","Fill NA with median","Fill NA with 0"])
-    if st.button("Apply Cleaning"):
-        clean_df = apply_cleaning(df, mode)
-        st.session_state["data_ctx"] = rebuild_data_ctx(clean_df, data_ctx["name"])
-        st.success("Cleaning applied.")
+    st.markdown("#### 🧹 Dataset Cleaning")
+    cleaning_mode = st.selectbox(
+        "Missing value strategy",
+        ["None", "Drop rows with missing values", "Fill numeric NA with median", "Fill numeric NA with 0"],
+        key="cleaning_mode",
+    )
 
-    # Inspector
-    render_dataset_inspector_ai(data_ctx, accent)
+    if st.button("Apply cleaning / rebuild dataset context", key="apply_cleaning_btn"):
+        clean_df = apply_cleaning(df, cleaning_mode)
+        st.session_state["data_ctx"] = rebuild_data_ctx(clean_df, data_ctx["name"])
+        data_ctx = st.session_state["data_ctx"]
+        st.success("Cleaning applied and dataset context rebuilt.")
+        log_info(f"Cleaning mode applied: {cleaning_mode}")
+
+    # Inspector AI
+    with st.expander("🔍 Dataset Inspector AI", expanded=False):
+        render_dataset_inspector_ai(data_ctx, accent)
+
     st.markdown("---")
 
 # ------------------------------------------
-# CSS – No Drag Curl, only smooth flip-in
+# CSS (No overlays, no blocking)
 # ------------------------------------------
 
-def inject_css(accent):
+def inject_css(accent: str):
     st.markdown(
         f"""
         <style>
         body {{
             background: radial-gradient(circle at top, #14141f 0%, #08080d 40%, #020205 100%) !important;
         }}
-        .block-container {{
-            padding-top: 0.2rem !important;
-        }}
-        :root {{ --accent: {accent}; }}
 
-        .book-shell {{
-            position: relative;
+        .block-container {{
+            padding-top: 0.4rem !important;
+        }}
+
+        :root {{
+            --accent: {accent};
+        }}
+
+        .page-container {{
             width: 100%;
             max-width: 1100px;
-            margin: 0.5rem auto;
-            perspective: 1800px;
-        }}
-
-        .page {{
-            position: absolute;
-            inset: 0;
-            border-radius: 18px;
+            margin: 0 auto;
             background: rgba(8,8,14,0.82);
             backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 18px;
             border: 1px solid rgba(255,255,255,0.06);
-            box-shadow: 0 20px 40px rgba(0,0,0,0.55);
-        }}
-
-        .stack1 {{ z-index: 90; opacity: 0.85; transform: translateY(10px); }}
-        .stack2 {{ z-index: 80; opacity: 0.70; transform: translateY(20px); }}
-        .stack3 {{ z-index: 70; opacity: 0.55; transform: translateY(30px); }}
-        .stack4 {{ z-index: 60; opacity: 0.40; transform: translateY(40px); }}
-
-        .active-page {{
-            z-index: 100;
-            opacity: 1;
+            box-shadow: 0 10px 35px rgba(0,0,0,0.45);
+            padding: 1.2rem 1.4rem;
             animation: flipIn 0.6s ease both;
         }}
 
         @keyframes flipIn {{
-            0% {{ opacity: 0; transform: rotateY(-80deg) translateX(-50px); }}
-            100% {{ opacity: 1; transform: rotateY(0deg) translateX(0px); }}
-        }}
-
-        .page-inner {{
-            height: 75vh;
-            padding: 0.8rem 1.2rem;
-            overflow-y: auto;
-            color: #f0f3ff;
+            0% {{
+                opacity: 0;
+                transform: translateY(30px) rotateX(-35deg);
+            }}
+            100% {{
+                opacity: 1;
+                transform: translateY(0px) rotateX(0deg);
+            }}
         }}
 
         .page-header {{
             color: var(--accent);
             font-size: 1.2rem;
+            font-weight: 650;
             border-right: 2px solid var(--accent);
             white-space: nowrap;
             overflow: hidden;
             width: 0;
-            animation: typing 2s steps(60,end) forwards, caret 0.7s infinite;
+            animation: typing 2s steps(60, end) forwards, caret 0.7s step-end infinite;
         }}
 
-        @keyframes typing {{ from {{ width: 0; }} to {{ width: 100%; }} }}
-        @keyframes caret {{ 50% {{ border-color: transparent; }} }}
+        @keyframes typing {{
+            from {{ width: 0; }}
+            to {{ width: 100%; }}
+        }}
+
+        @keyframes caret {{
+            50% {{ border-color: transparent; }}
+        }}
 
         .page-divider {{
             height: 2px;
             background: linear-gradient(90deg, transparent, var(--accent), transparent);
-            margin: 0.7rem 0;
+            margin: 0.7rem 0 1.0rem 0;
         }}
         </style>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 # ------------------------------------------
@@ -343,64 +408,75 @@ def inject_css(accent):
 # ------------------------------------------
 
 def main():
-    st.set_page_config(page_title="CDEPM – Policy Codex", layout="wide")
+    st.set_page_config(page_title="CDEPM – Quantum Policy Codex", layout="wide")
 
     init_log_ctx()
 
     st.sidebar.title("CDEPM Orchestrator")
+
     tab_name = st.sidebar.radio("Module", list(TAB_MAP.keys()))
     accent = TAB_COLORS[tab_name]
-    show_logs = st.sidebar.checkbox("Show Log Panel")
 
+    show_logs = st.sidebar.checkbox("Show system log")
     agent_on = st.sidebar.checkbox("Enable AI Margin Analyst")
 
     inject_css(accent)
     init_data_ctx()
 
-    # Book layers
-    st.markdown('<div class="book-shell">', unsafe_allow_html=True)
-    st.markdown('<div class="page stack4"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="page stack3"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="page stack2"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="page stack1"></div>', unsafe_allow_html=True)
+    # Outer container
+    st.markdown('<div class="page-container">', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="page-header">{tab_name}</div><div class="page-divider"></div>',
+        unsafe_allow_html=True,
+    )
 
-    st.markdown('<div class="page active-page"><div class="page-inner">', unsafe_allow_html=True)
-    st.markdown(f'<div class="page-header">{tab_name}</div><div class="page-divider"></div>', unsafe_allow_html=True)
-
-    # Data Hub
+    # Data hub (global dataset)
     render_data_hub(accent)
     data_ctx = st.session_state["data_ctx"]
 
-    # Module Renderer
+    # Render selected module
+    module = TAB_MAP[tab_name]
     try:
-        module = TAB_MAP[tab_name]
         module.render(accent, get_figure, data_ctx)
     except Exception as e:
-        st.error(str(e))
-        log_error(str(e))
+        st.error(f"Error inside module '{tab_name}': {e}")
+        log_error(f"Tab '{tab_name}' error: {e}")
 
-    st.markdown('</div></div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)  # close page-container
 
-    # Margin Analyst
+    # Margin AI Analyst (explains current module)
     if agent_on:
-        client = get_openai_client()
-        q = st.text_area("Ask Spectre.AI about this module:")
-        if st.button("Explain Module"):
-            try:
+        try:
+            client = get_openai_client()
+            st.markdown("### 🤖 Spectre.AI – Margin Analyst")
+            q = st.text_area(
+                "Ask about this module, its logic, or how to interpret its outputs:",
+                key="module_ai_q",
+            )
+            if st.button("Explain Module", key="module_ai_btn") and q.strip():
                 completion = client.chat.completions.create(
                     model="gpt-4.1-mini",
                     messages=[
-                        {"role": "system", "content": "You are a precise econometric analyst."},
-                        {"role": "user", "content": f"Module: {tab_name}\n{q}"},
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a precise, technical explainer for an engineer–economist. "
+                                "Explain without fluff, focusing on logic, control intuition, and policy meaning."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": f"Module: {tab_name}\n\nQuestion: {q}",
+                        },
                     ],
                 )
                 st.write(completion.choices[0].message.content)
-            except Exception as e:
-                st.error(str(e))
-                log_error(str(e))
+                log_info("Margin Analyst AI answered a module query.")
+        except Exception as e:
+            st.error(f"Margin Analyst error: {e}")
+            log_error(f"Margin Analyst error: {e}")
 
-    # Logs
+    # System log
     if show_logs:
         st.markdown("---")
         st.markdown("### System Log")
