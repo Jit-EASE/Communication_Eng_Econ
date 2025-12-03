@@ -7,11 +7,11 @@ import plotly.graph_objects as go
 from cdpem_core.rl_tuner import coarse_grid_search
 
 
-def render(accent: str, get_figure):
+def render(accent: str, get_figure, data_ctx: dict):
     st.subheader("Policy Parameter Tuner (Coarse Search)")
     st.write(
-        "Primitive RL-lite tuner for PID parameters, minimising a loss that combines "
-        "inflation volatility and policy effort."
+        "RL-lite tuner for PID parameters, minimising a loss that combines "
+        "inflation volatility and policy effort. Dataset is optional context here."
     )
 
     pi_target = st.slider("Target inflation (π*)", 0.0, 0.10, 0.02, step=0.005)
@@ -52,7 +52,7 @@ def render(accent: str, get_figure):
         st.write(
             {
                 "Kp": Kp_best,
-                "Ki": K_i_best if False else Ki_best,  # keep explicit names mentally
+                "Ki": Ki_best,
                 "Kd": Kd_best,
                 "Loss": best_loss,
             }
@@ -83,6 +83,6 @@ def render(accent: str, get_figure):
         st.plotly_chart(fig, use_container_width=True)
 
         st.write(
-            "This is a coarse search, not a full RL agent yet. But it already encodes "
-            "the logic of a self-tuning controller that learns stabilising policy mixes."
+            "This is still model-driven, but you can use insights from your real dataset "
+            "(e.g., volatility ranges) to calibrate reasonable grids for Kp, Ki, Kd."
         )
