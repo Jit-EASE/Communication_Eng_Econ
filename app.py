@@ -4,6 +4,7 @@ import streamlit as st
 from openai import OpenAI
 import plotly.graph_objects as go
 import plotly.io as pio
+import pandas as pd
 
 from tabs import (
     tab1_control,
@@ -31,6 +32,8 @@ TAB_COLORS = {
     "Policy Tuner (v0.5)": "#ff6c47",
 }
 
+
+# ---------- OpenAI Client ----------
 
 def get_openai_client():
     """
@@ -64,7 +67,7 @@ def make_plotly_template(accent: str = "#00eaff") -> None:
             hoverlabel=dict(
                 bgcolor="rgba(10,10,20,0.80)",
                 bordercolor=accent,
-                font=dict(color="white")
+                font=dict(color="white"),
             ),
             xaxis=dict(
                 gridcolor="rgba(255,255,255,0.10)",
@@ -95,6 +98,125 @@ def get_figure(accent: str = "#00eaff") -> go.Figure:
     """
     make_plotly_template(accent)
     return go.Figure()
+
+
+# ---------- Global Data Hub ----------
+
+def init_data_ctx():
+    if "data_ctx" not in st.session_state:
+        st.session_state["data_ctx"] = {
+            "df": None,
+            "name": None,
+            "numeric_cols": [],
+            "datetime_cols": [],
+            "n_rows": 0,
+            "n_cols": 0,
+        }
+
+
+def load_uploaded_file(uploaded_file) -> pd.DataFrame | None:
+    """
+    Load supported file types: CSV, Excel, JSON.
+    """
+    if uploaded_file is None:
+        return None
+
+    fname = uploaded_file.name.lower()
+    try:
+        if fname.endswith(".csv"):
+            return pd.read_csv(uploaded_file)
+        elif fname.endswith(".xlsx") or fname.endswith(".xls"):
+            return pd.read_excel(uploaded_file)
+        elif fname.endswith(".json"):
+            return pd.read_json(uploaded_file)
+        else:
+            st.error("Unsupported file type. Use CSV, Excel, or JSON.")
+            return None
+    except Exception as e:
+        st.error(f"Error loading file: {e}")
+        return None
+
+
+def build_data_ctx(df: pd.DataFrame | None, name: str | None):
+    """
+    Build metadata: numeric columns, datetime columns, shape.
+    """
+    if df is None:
+        return {
+            "df": None,
+            "name": None,
+            "numeric_cols": [],
+            "datetime_cols": [],
+            "n_rows": 0,
+            "n_cols": 0,
+        }
+
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    datetime_cols = df.select_dtypes(include=["datetime64[ns]", "datetime64[ns, UTC]"]).columns.tolist()
+
+    return {
+        "df": df,
+        "name": name,
+        "numeric_cols": numeric_cols,
+        "datetime_cols": datetime_cols,
+        "n_rows": df.shape[0],
+        "n_cols": df.shape[1],
+    }
+
+
+def render_data_hub(accent: str):
+    """
+    Render a compact Data Hub at the top of the page; this controls dataset
+    for the entire system via st.session_state["data_ctx"].
+    """
+    init_data_ctx()
+    data_ctx = st.session_state["data_ctx"]
+
+    st.markdown("### Data Hub – Global Dataset for All Modules")
+    st.write(
+        "Upload any real dataset (CSV, Excel, JSON). All modules can optionally "
+        "use this dataset for analysis instead of purely simulated data."
+    )
+
+    uploaded_file = st.file_uploader(
+        "Upload dataset",
+        type=["csv", "xlsx", "xls", "json"],
+        help="This dataset will be available to Control, Cycle, Network, Queue, and Tuner modules.",
+    )
+
+    if uploaded_file is not None:
+        df = load_uploaded_file(uploaded_file)
+        if df is not None:
+            data_ctx = build_data_ctx(df, uploaded_file.name)
+            st.session_state["data_ctx"] = data_ctx
+
+    df = data_ctx["df"]
+
+    if df is not None:
+        st.success(
+            f"Loaded dataset: **{data_ctx['name']}** "
+            f"({data_ctx['n_rows']} rows × {data_ctx['n_cols']} columns)"
+        )
+
+        # Show a small preview
+        st.dataframe(df.head(10), use_container_width=True)
+
+        # Show detected columns
+        st.markdown("**Detected numeric columns:**")
+        if data_ctx["numeric_cols"]:
+            st.write(", ".join(data_ctx["numeric_cols"]))
+        else:
+            st.write("_None detected_")
+
+        if data_ctx["datetime_cols"]:
+            st.markdown("**Detected datetime columns:**")
+            st.write(", ".join(data_ctx["datetime_cols"]))
+    else:
+        st.info(
+            "No dataset loaded yet. Upload a file to make it available "
+            "to all modules. If no data is provided, modules will fall back "
+            "to synthetic simulations."
+        )
 
 
 # ---------- CSS & Layout ----------
@@ -268,6 +390,8 @@ def inject_css(accent: str):
     )
 
 
+# ---------- Main ----------
+
 def main():
     st.set_page_config(
         page_title="CDEPM – Quantum Policy Codex",
@@ -279,6 +403,7 @@ def main():
     accent = TAB_COLORS[tab_name]
 
     inject_css(accent)
+    init_data_ctx()
 
     agent_on = st.sidebar.checkbox("Enable AI Margin Commentator")
 
@@ -305,9 +430,14 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # Render selected tab with access to accent + Plotly figure factory
+    # ----- Global Data Hub (always at top of content) -----
+    render_data_hub(accent)
+    st.markdown("---")
+
+    # ----- Render selected tab with data context -----
+    data_ctx = st.session_state["data_ctx"]
     module = TAB_MAP[tab_name]
-    module.render(accent, get_figure)
+    module.render(accent, get_figure, data_ctx)
 
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
@@ -343,7 +473,8 @@ def main():
                                 "content": (
                                     f"You are a margin commentator explaining the tab "
                                     f"'{tab_name}' in a communication-engineering + "
-                                    f"econometrics framing. Be clear, concise, and rigorous."
+                                    f"econometrics framing. The dataset context is: "
+                                    f"{data_ctx['name'] if data_ctx['name'] else 'no dataset loaded'}."
                                 ),
                             },
                             {"role": "user", "content": user_query},
