@@ -1,8 +1,18 @@
 streamlit
 openai
-numpy
 pandas
+numpy
 plotly
 networkx
+scipy
+
+# Excel + JSON parsing
+openpyxl
+xlrd
+
+# Image ops + Streamlit internals
 pillow
+
+# Optional but recommended for stability and performance
 requests
+watchdog
