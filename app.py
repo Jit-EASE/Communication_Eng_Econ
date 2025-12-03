@@ -1,7 +1,7 @@
 # app.py
 
 import streamlit as st
-import openai
+from openai import OpenAI
 
 from tabs import (
     tab1_control,
@@ -29,6 +29,11 @@ TAB_COLORS = {
     "Policy Tuner (v0.5)": "#ff6c47",
 }
 
+# Create OpenAI client (expects OPENAI_API_KEY in Streamlit secrets or env)
+def get_openai_client():
+    api_key = st.secrets.get("OPENAI_API_KEY", None)  # or rely on env var
+    return OpenAI(api_key=api_key) if api_key else None
+
 
 def inject_css(accent: str):
     """Load CSS theme with dynamic neon accent + typewriter header."""
@@ -49,12 +54,10 @@ def inject_css(accent: str):
             perspective: 1600px;
         }}
 
-        /* ----- Neon Accent Color ----- */
         :root {{
             --accent: {accent};
         }}
 
-        /* ----- Page Styles (same as before, but neon tuned) ----- */
         .page {{
             position: absolute;
             inset: 0;
@@ -99,7 +102,6 @@ def inject_css(accent: str):
             transform: translateY(70px) translateX(-18px) scale(0.94) rotateY(-9deg);
         }}
 
-        /* Page flip */
         .flip-in {{
             animation: flipInFromRight 0.7s forwards cubic-bezier(0.22,1,0.36,1);
         }}
@@ -119,7 +121,6 @@ def inject_css(accent: str):
             }}
         }}
 
-        /* ----- Typewriter Header Animation ----- */
         .page-header {{
             font-size: 1.15rem;
             font-weight: 600;
@@ -144,7 +145,6 @@ def inject_css(accent: str):
             50% {{ border-color: transparent }}
         }}
 
-        /* Divider */
         .page-divider {{
             height: 2px;
             width: 100%;
@@ -157,7 +157,6 @@ def inject_css(accent: str):
             margin-bottom: 1rem;
         }}
 
-        /* Page content container */
         .page-inner {{
             position: relative;
             width: 100%;
@@ -167,7 +166,17 @@ def inject_css(accent: str):
             color: #f0f3ff;
         }}
 
-        /* ----- Margin Commentator (AI Agent) ----- */
+        .page-inner::-webkit-scrollbar {{
+            width: 6px;
+        }}
+        .page-inner::-webkit-scrollbar-track {{
+            background: transparent;
+        }}
+        .page-inner::-webkit-scrollbar-thumb {{
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 4px;
+        }}
+
         .agent-box {{
             position: fixed;
             right: 12px;
@@ -197,24 +206,21 @@ def inject_css(accent: str):
 def main():
     st.set_page_config(
         page_title="CDEPM – Quantum Policy Codex",
-        layout="wide"
+        layout="wide",
     )
 
-    # Sidebar tab selector
     st.sidebar.title("CDEPM Orchestrator")
     tab_name = st.sidebar.radio("Module", list(TAB_MAP.keys()))
     accent = TAB_COLORS[tab_name]
 
-    # Inject CSS with dynamic accent color
     inject_css(accent)
 
-    # Toggle for margin agent
     agent_on = st.sidebar.checkbox("Enable AI Margin Commentator")
 
-    # Book-shell container
+    # Main book container
     st.markdown('<div class="book-shell">', unsafe_allow_html=True)
 
-    # Four depth layers
+    # Depth layers
     st.markdown('<div class="page stack4"></div>', unsafe_allow_html=True)
     st.markdown('<div class="page stack3"></div>', unsafe_allow_html=True)
     st.markdown('<div class="page stack2"></div>', unsafe_allow_html=True)
@@ -234,36 +240,50 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # Render actual module
     module = TAB_MAP[tab_name]
     module.render()
 
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---- AI Margin Commentator ----
+    # Margin AI agent
     if agent_on:
-        with st.container():
-            st.markdown('<div class="agent-box">', unsafe_allow_html=True)
-            st.markdown(f'<div class="agent-title">Spectre.AI – Margin Analyst</div>', unsafe_allow_html=True)
+        client = get_openai_client()
+        st.markdown('<div class="agent-box">', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="agent-title">Spectre.AI – Margin Analyst</div>',
+            unsafe_allow_html=True,
+        )
 
-            user_query = st.text_area("Ask about this module:", key="agent_input")
+        user_query = st.text_area("Ask about this module:", key="agent_input")
 
-            if st.button("Explain"):
-                if user_query.strip():
-                    try:
-                        completion = openai.ChatCompletion.create(
-                            model="gpt-4o-mini",
-                            messages=[
-                                {"role": "system", "content": f"You are a margin commentator explaining the tab '{tab_name}'."},
-                                {"role": "user", "content": user_query}
-                            ]
-                        )
-                        st.write(completion.choices[0].message["content"])
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+        if st.button("Explain"):
+            if not client:
+                st.error(
+                    "OpenAI client not configured. Set OPENAI_API_KEY in Streamlit secrets or env."
+                )
+            elif user_query.strip():
+                try:
+                    completion = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    f"You are a margin commentator explaining the tab "
+                                    f"'{tab_name}' in a communication-engineering + "
+                                    f"econometrics framing. Be clear, concise, and rigorous."
+                                ),
+                            },
+                            {"role": "user", "content": user_query},
+                        ],
+                    )
+                    answer = completion.choices[0].message.content
+                    st.write(answer)
+                except Exception as e:
+                    st.error(f"Error from OpenAI API: {e}")
 
-            st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
