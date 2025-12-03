@@ -1,4 +1,4 @@
-# app.py
+# app.py — DRAG-TO-CURL VERSION (Apple Books Style)
 
 import streamlit as st
 from openai import OpenAI
@@ -14,7 +14,10 @@ from tabs import (
     tab5_rl,
 )
 
-# Map tabs → module
+# -------------------------------
+# TAB MAP
+# -------------------------------
+
 TAB_MAP = {
     "Control System (v0.1)": tab1_control,
     "Cycle Analysis (v0.2)": tab2_cycle,
@@ -23,7 +26,6 @@ TAB_MAP = {
     "Policy Tuner (v0.5)": tab5_rl,
 }
 
-# Neon accent colors per tab
 TAB_COLORS = {
     "Control System (v0.1)": "#00eaff",
     "Cycle Analysis (v0.2)": "#ff47e8",
@@ -33,16 +35,11 @@ TAB_COLORS = {
 }
 
 
-# ---------- OpenAI Client ----------
+# -------------------------------
+# OPENAI NEW CLIENT
+# -------------------------------
 
 def get_openai_client():
-    """
-    Create OpenAI client.
-
-    - If OPENAI_API_KEY is in st.secrets, use it.
-    - Otherwise rely on environment variable.
-    """
-    api_key = None
     try:
         api_key = st.secrets.get("OPENAI_API_KEY", None)
     except Exception:
@@ -50,15 +47,14 @@ def get_openai_client():
 
     if api_key:
         return OpenAI(api_key=api_key)
-    return OpenAI()  # will use env var if set
+    return OpenAI()
 
 
-# ---------- Plotly theme helpers ----------
+# -------------------------------
+# PLOTLY THEME
+# -------------------------------
 
-def make_plotly_template(accent: str = "#00eaff") -> None:
-    """
-    Define a Plotly template with glassmorphic background and crosshair spikes.
-    """
+def make_plotly_template(accent):
     pio.templates["spectre"] = go.layout.Template(
         layout=dict(
             paper_bgcolor="rgba(0,0,0,0)",
@@ -67,7 +63,7 @@ def make_plotly_template(accent: str = "#00eaff") -> None:
             hoverlabel=dict(
                 bgcolor="rgba(10,10,20,0.80)",
                 bordercolor=accent,
-                font=dict(color="white"),
+                font=dict(color="white")
             ),
             xaxis=dict(
                 gridcolor="rgba(255,255,255,0.10)",
@@ -92,15 +88,14 @@ def make_plotly_template(accent: str = "#00eaff") -> None:
     pio.templates.default = "spectre"
 
 
-def get_figure(accent: str = "#00eaff") -> go.Figure:
-    """
-    Create a new Plotly figure using the neon 'spectre' template.
-    """
+def get_figure(accent):
     make_plotly_template(accent)
     return go.Figure()
 
 
-# ---------- Global Data Hub ----------
+# -------------------------------
+# DATA HUB CORE
+# -------------------------------
 
 def init_data_ctx():
     if "data_ctx" not in st.session_state:
@@ -114,33 +109,26 @@ def init_data_ctx():
         }
 
 
-def load_uploaded_file(uploaded_file) -> pd.DataFrame | None:
-    """
-    Load supported file types: CSV, Excel, JSON.
-    """
-    if uploaded_file is None:
+def load_uploaded_file(uploaded):
+    if uploaded is None:
         return None
-
-    fname = uploaded_file.name.lower()
+    name = uploaded.name.lower()
     try:
-        if fname.endswith(".csv"):
-            return pd.read_csv(uploaded_file)
-        elif fname.endswith(".xlsx") or fname.endswith(".xls"):
-            return pd.read_excel(uploaded_file)
-        elif fname.endswith(".json"):
-            return pd.read_json(uploaded_file)
+        if name.endswith(".csv"):
+            return pd.read_csv(uploaded)
+        elif name.endswith(".xlsx") or name.endswith(".xls"):
+            return pd.read_excel(uploaded)
+        elif name.endswith(".json"):
+            return pd.read_json(uploaded)
         else:
-            st.error("Unsupported file type. Use CSV, Excel, or JSON.")
+            st.error("Unsupported format (use CSV, Excel, or JSON).")
             return None
     except Exception as e:
-        st.error(f"Error loading file: {e}")
+        st.error(f"File error: {e}")
         return None
 
 
-def build_data_ctx(df: pd.DataFrame | None, name: str | None):
-    """
-    Build metadata: numeric columns, datetime columns, shape.
-    """
+def build_data_ctx(df, name):
     if df is None:
         return {
             "df": None,
@@ -151,78 +139,52 @@ def build_data_ctx(df: pd.DataFrame | None, name: str | None):
             "n_cols": 0,
         }
 
-    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-    datetime_cols = df.select_dtypes(include=["datetime64[ns]", "datetime64[ns, UTC]"]).columns.tolist()
-
     return {
         "df": df,
         "name": name,
-        "numeric_cols": numeric_cols,
-        "datetime_cols": datetime_cols,
+        "numeric_cols": df.select_dtypes(include=["number"]).columns.tolist(),
+        "datetime_cols": df.select_dtypes(include=["datetime64[ns]"]).columns.tolist(),
         "n_rows": df.shape[0],
         "n_cols": df.shape[1],
     }
 
 
-def render_data_hub(accent: str):
-    """
-    Render a compact Data Hub at the top of the page; this controls dataset
-    for the entire system via st.session_state["data_ctx"].
-    """
+def render_data_hub(accent):
     init_data_ctx()
     data_ctx = st.session_state["data_ctx"]
 
-    st.markdown("### Data Hub – Global Dataset for All Modules")
+    st.markdown("### Data Hub — Global Dataset for All Modules")
     st.write(
-        "Upload any real dataset (CSV, Excel, JSON). All modules can optionally "
-        "use this dataset for analysis instead of purely simulated data."
+        "Upload any real dataset (CSV, Excel, JSON). All modules can use it "
+        "for overlays, cycle analysis, network construction, queue plots, and parameter tuning reference."
     )
 
-    uploaded_file = st.file_uploader(
-        "Upload dataset",
-        type=["csv", "xlsx", "xls", "json"],
-        help="This dataset will be available to Control, Cycle, Network, Queue, and Tuner modules.",
-    )
+    uploaded = st.file_uploader("Upload dataset", type=["csv","xlsx","xls","json"])
 
-    if uploaded_file is not None:
-        df = load_uploaded_file(uploaded_file)
+    if uploaded:
+        df = load_uploaded_file(uploaded)
         if df is not None:
-            data_ctx = build_data_ctx(df, uploaded_file.name)
-            st.session_state["data_ctx"] = data_ctx
+            st.session_state["data_ctx"] = build_data_ctx(df, uploaded.name)
+            data_ctx = st.session_state["data_ctx"]
 
     df = data_ctx["df"]
 
     if df is not None:
-        st.success(
-            f"Loaded dataset: **{data_ctx['name']}** "
-            f"({data_ctx['n_rows']} rows × {data_ctx['n_cols']} columns)"
-        )
-
-        # Show a small preview
+        st.success(f"Loaded dataset: **{data_ctx['name']}**")
         st.dataframe(df.head(10), use_container_width=True)
-
-        # Show detected columns
-        st.markdown("**Detected numeric columns:**")
-        if data_ctx["numeric_cols"]:
-            st.write(", ".join(data_ctx["numeric_cols"]))
-        else:
-            st.write("_None detected_")
-
-        if data_ctx["datetime_cols"]:
-            st.markdown("**Detected datetime columns:**")
-            st.write(", ".join(data_ctx["datetime_cols"]))
+        st.markdown("**Numeric columns detected:**")
+        st.write(", ".join(data_ctx["numeric_cols"]) or "_None_")
     else:
-        st.info(
-            "No dataset loaded yet. Upload a file to make it available "
-            "to all modules. If no data is provided, modules will fall back "
-            "to synthetic simulations."
-        )
+        st.info("No dataset loaded. Modules will use synthetic simulations.")
+
+    st.markdown("---")
 
 
-# ---------- CSS & Layout ----------
+# -------------------------------
+# APPLE BOOKS STYLE PAGE CURL CSS
+# -------------------------------
 
-def inject_css(accent: str):
-    """Load CSS theme with dynamic neon accent + typewriter header + page stack."""
+def inject_css(accent):
     st.markdown(
         f"""
         <style>
@@ -231,259 +193,259 @@ def inject_css(accent: str):
             background: radial-gradient(circle at top, #14141f 0%, #08080d 40%, #020205 100%) !important;
         }}
 
-        .book-shell {{
-            position: relative;
-            width: 100%;
-            height: 80vh;
-            max-width: 1100px;
-            margin: 1.5rem auto;
-            perspective: 1600px;
+        .block-container {{
+            padding-top: 0.2rem !important;
         }}
 
         :root {{
             --accent: {accent};
+            --curl-ry: 0deg;
+            --curl-skew: 0deg;
+            --curl-tx: 0px;
+            --curl-scale: 1;
+        }}
+
+        .book-shell {{
+            position: relative;
+            width: 100%;
+            max-width: 1100px;
+            margin: 0.5rem auto 1.5rem auto;
+            perspective: 1800px;
         }}
 
         .page {{
             position: absolute;
             inset: 0;
             border-radius: 18px;
-            background: rgba(8, 8, 14, 0.75);
+            background: rgba(8,8,14,0.82);
             backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            box-shadow:
-                0 18px 40px rgba(0, 0, 0, 0.55),
-                0 0 40px var(--accent);
-            overflow: hidden;
-            transform-origin: right center;
-            transition: transform 0.7s cubic-bezier(0.22,1,0.36,1),
-                        opacity 0.7s cubic-bezier(0.22,1,0.36,1),
-                        box-shadow 0.4s ease;
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.55), 0 0 30px var(--accent);
+            transform-origin: left center;
+            transition: transform 0.18s ease-out,
+                        box-shadow 0.18s ease-out,
+                        filter 0.18s ease-out,
+                        opacity 0.3s ease-out;
         }}
+
+        .stack1 {{ z-index: 90; opacity: 0.85; transform: translateY(10px) scale(0.99) rotateY(-2deg); }}
+        .stack2 {{ z-index: 80; opacity: 0.70; transform: translateY(20px) scale(0.98) rotateY(-4deg); }}
+        .stack3 {{ z-index: 70; opacity: 0.55; transform: translateY(30px) scale(0.97) rotateY(-6deg); }}
+        .stack4 {{ z-index: 60; opacity: 0.40; transform: translateY(40px) scale(0.96) rotateY(-8deg); }}
 
         .active-page {{
             z-index: 100;
             opacity: 1;
-            transform: translateY(0px) scale(1) rotateY(0deg);
-        }}
-
-        .stack1 {{
-            z-index: 90;
-            opacity: 0.80;
-            transform: translateY(16px) translateX(-7px) scale(0.985) rotateY(-3deg);
-        }}
-        .stack2 {{
-            z-index: 80;
-            opacity: 0.65;
-            transform: translateY(34px) translateX(-10px) scale(0.97) rotateY(-5deg);
-        }}
-        .stack3 {{
-            z-index: 70;
-            opacity: 0.50;
-            transform: translateY(52px) translateX(-14px) scale(0.955) rotateY(-7deg);
-        }}
-        .stack4 {{
-            z-index: 60;
-            opacity: 0.35;
-            transform: translateY(70px) translateX(-18px) scale(0.94) rotateY(-9deg);
+            transform:
+                perspective(1600px)
+                translateX(var(--curl-tx))
+                rotateY(var(--curl-ry))
+                skewY(var(--curl-skew))
+                scale(var(--curl-scale));
+            background: linear-gradient(
+                90deg,
+                rgba(255,255,255,0.04) 0%,
+                rgba(255,255,255,0.10) 12%,
+                rgba(0,0,0,0.20) 55%,
+                rgba(0,0,0,0.50) 100%
+            );
         }}
 
         .flip-in {{
-            animation: flipInFromRight 0.7s forwards cubic-bezier(0.22,1,0.36,1);
+            animation: pageCurlEntry 0.9s cubic-bezier(0.25,0.8,0.25,1);
         }}
 
-        @keyframes flipInFromRight {{
+        @keyframes pageCurlEntry {{
             0% {{
-                transform: translateY(0px) rotateY(90deg);
+                transform: perspective(1600px) translateX(-40px) rotateY(-70deg) skewY(-10deg) scale(0.96);
                 opacity: 0;
+                filter: brightness(0.7);
             }}
             50% {{
-                transform: translateY(-4px) rotateY(-6deg);
+                transform: perspective(1600px) translateX(-18px) rotateY(-25deg) skewY(-6deg) scale(1.03);
                 opacity: 0.9;
             }}
             100% {{
-                transform: translateY(0px) rotateY(0deg);
+                transform: perspective(1600px) translateX(0) rotateY(0) skewY(0) scale(1);
                 opacity: 1;
             }}
         }}
 
+        .page-inner {{
+            height: 76vh;
+            padding: 0.8rem 1.2rem;
+            overflow-y: auto;
+        }}
+
         .page-header {{
-            font-size: 1.15rem;
-            font-weight: 600;
+            font-size: 1.2rem;
+            font-weight: 650;
             color: var(--accent);
-            opacity: 0.9;
-            margin-bottom: 0.4rem;
-            width: 0;
-            white-space: nowrap;
-            overflow: hidden;
             border-right: 2px solid var(--accent);
-            animation:
-                typing 2.5s steps(40,end) forwards,
-                caret 0.75s step-end infinite;
+            width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            animation: typing 2.4s steps(60,end) forwards, caret 0.7s step-end infinite;
         }}
 
-        @keyframes typing {{
-            from {{ width: 0 }}
-            to {{ width: 100% }}
-        }}
-
-        @keyframes caret {{
-            50% {{ border-color: transparent }}
-        }}
+        @keyframes typing {{ from {{width:0;}} to {{width:100%;}} }}
+        @keyframes caret {{ 50% {{border-color:transparent;}} }}
 
         .page-divider {{
             height: 2px;
-            width: 100%;
-            background: linear-gradient(
-                90deg,
-                rgba(255,255,255,0.0),
-                var(--accent),
-                rgba(255,255,255,0.0)
-            );
-            margin-bottom: 1rem;
-        }}
-
-        .page-inner {{
-            position: relative;
-            width: 100%;
-            height: 100%;
-            padding: 1.4rem 1.6rem;
-            overflow-y: auto;
-            color: #f0f3ff;
-        }}
-
-        .page-inner::-webkit-scrollbar {{
-            width: 6px;
-        }}
-        .page-inner::-webkit-scrollbar-track {{
-            background: transparent;
-        }}
-        .page-inner::-webkit-scrollbar-thumb {{
-            background: rgba(255, 255, 255, 0.25);
-            border-radius: 4px;
+            background: linear-gradient(90deg, rgba(255,255,255,0), var(--accent), rgba(255,255,255,0));
+            margin-bottom: 0.8rem;
         }}
 
         .agent-box {{
             position: fixed;
             right: 12px;
-            top: 110px;
-            width: 280px;
-            background: rgba(18,18,26,0.85);
+            top: 80px;
+            width: 260px;
+            background: rgba(18,18,26,0.92);
             border: 1px solid var(--accent);
             box-shadow: 0 0 25px var(--accent);
-            backdrop-filter: blur(10px);
-            padding: 1rem;
+            padding: 0.8rem;
             border-radius: 14px;
             z-index: 9999;
         }}
 
-        .agent-title {{
-            font-size: 0.9rem;
-            letter-spacing: 0.12em;
-            color: var(--accent);
-            margin-bottom: 0.4rem;
-        }}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-# ---------- Main ----------
+# -------------------------------
+# DRAG-TO-CURL JAVASCRIPT
+# -------------------------------
+
+def inject_drag_curl_js():
+    st.markdown(
+        """
+        <script>
+        (function() {
+            function bindCurl() {
+                const page = document.querySelector('.page.active-page');
+                if (!page) return;
+                if (page.dataset.curlBound === "1") return;
+                page.dataset.curlBound = "1";
+
+                let dragging = false;
+                let startX = 0;
+                let width = page.offsetWidth || 800;
+
+                function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+                page.addEventListener('pointerdown', function(e) {
+                    dragging = true;
+                    startX = e.clientX;
+                    width = page.offsetWidth || 800;
+                    try { page.setPointerCapture(e.pointerId); } catch(_) {}
+                    page.style.transition = "none";
+                });
+
+                page.addEventListener('pointermove', function(e) {
+                    if (!dragging) return;
+                    const dx = e.clientX - startX;
+                    const ratio = clamp(dx / width, -1.0, 0.35);
+
+                    const angle = ratio * -80;
+                    const skew  = ratio * -12;
+                    const tx    = ratio * -30;
+                    const scale = 1 + Math.abs(ratio) * 0.04;
+
+                    page.style.setProperty('--curl-ry', angle + 'deg');
+                    page.style.setProperty('--curl-skew', skew + 'deg');
+                    page.style.setProperty('--curl-tx', tx + 'px');
+                    page.style.setProperty('--curl-scale', scale);
+                });
+
+                function release(e) {
+                    if (!dragging) return;
+                    dragging = false;
+                    try { page.releasePointerCapture(e.pointerId); } catch(_) {}
+
+                    page.style.transition =
+                        "transform 0.22s ease-out, box-shadow 0.22s ease-out, filter 0.22s ease-out";
+
+                    page.style.setProperty('--curl-ry', '0deg');
+                    page.style.setProperty('--curl-skew', '0deg');
+                    page.style.setProperty('--curl-tx', '0px');
+                    page.style.setProperty('--curl-scale', '1');
+                }
+
+                page.addEventListener('pointerup', release);
+                page.addEventListener('pointercancel', release);
+                page.addEventListener('pointerleave', release);
+            }
+
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(bindCurl, 200);
+            });
+
+            setTimeout(bindCurl, 600);
+        })();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# -------------------------------
+# MAIN APP
+# -------------------------------
 
 def main():
-    st.set_page_config(
-        page_title="CDEPM – Quantum Policy Codex",
-        layout="wide",
-    )
+    st.set_page_config(page_title="CDEPM – Quantum Policy Codex", layout="wide")
 
     st.sidebar.title("CDEPM Orchestrator")
     tab_name = st.sidebar.radio("Module", list(TAB_MAP.keys()))
     accent = TAB_COLORS[tab_name]
 
     inject_css(accent)
+    inject_drag_curl_js()
     init_data_ctx()
 
     agent_on = st.sidebar.checkbox("Enable AI Margin Commentator")
 
-    # Book container
     st.markdown('<div class="book-shell">', unsafe_allow_html=True)
 
-    # Depth layers
     st.markdown('<div class="page stack4"></div>', unsafe_allow_html=True)
     st.markdown('<div class="page stack3"></div>', unsafe_allow_html=True)
     st.markdown('<div class="page stack2"></div>', unsafe_allow_html=True)
     st.markdown('<div class="page stack1"></div>', unsafe_allow_html=True)
 
-    # Active page
-    st.markdown(
-        '<div class="page active-page flip-in"><div class="page-inner">',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="page active-page flip-in"><div class="page-inner">', unsafe_allow_html=True)
 
-    st.markdown(
-        f"""
-        <div class="page-header">{tab_name}</div>
-        <div class="page-divider"></div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(f'<div class="page-header">{tab_name}</div><div class="page-divider"></div>', unsafe_allow_html=True)
 
-    # ----- Global Data Hub (always at top of content) -----
     render_data_hub(accent)
-    st.markdown("---")
 
-    # ----- Render selected tab with data context -----
-    data_ctx = st.session_state["data_ctx"]
     module = TAB_MAP[tab_name]
-    module.render(accent, get_figure, data_ctx)
+    module.render(accent, get_figure, st.session_state["data_ctx"])
 
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Margin AI analyst
     if agent_on:
-        client = None
-        try:
-            client = get_openai_client()
-        except Exception:
-            client = None
-
+        client = get_openai_client()
         st.markdown('<div class="agent-box">', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="agent-title">Spectre.AI – Margin Analyst</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="agent-title">Spectre.AI – Margin Analyst</div>', unsafe_allow_html=True)
 
-        user_query = st.text_area("Ask about this module:", key="agent_input")
-
-        if st.button("Explain"):
-            if not client:
-                st.error(
-                    "OpenAI client not configured. Set OPENAI_API_KEY in Streamlit secrets or env."
+        query = st.text_area("Ask about this module:")
+        if st.button("Explain") and query:
+            try:
+                r = client.chat.completions.create(
+                    model="gpt-4.1-mini",
+                    messages=[
+                        {"role":"system","content":f"Explain {tab_name} in a rigorous, calm, strategic tone."},
+                        {"role":"user","content":query},
+                    ]
                 )
-            elif user_query.strip():
-                try:
-                    completion = client.chat.completions.create(
-                        model="gpt-4.1-mini",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": (
-                                    f"You are a margin commentator explaining the tab "
-                                    f"'{tab_name}' in a communication-engineering + "
-                                    f"econometrics framing. The dataset context is: "
-                                    f"{data_ctx['name'] if data_ctx['name'] else 'no dataset loaded'}."
-                                ),
-                            },
-                            {"role": "user", "content": user_query},
-                        ],
-                    )
-                    answer = completion.choices[0].message.content
-                    st.write(answer)
-                except Exception as e:
-                    st.error(f"Error from OpenAI API: {e}")
+                st.write(r.choices[0].message.content)
+            except Exception as e:
+                st.error(str(e))
 
         st.markdown("</div>", unsafe_allow_html=True)
 
