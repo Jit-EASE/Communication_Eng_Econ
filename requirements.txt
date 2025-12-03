@@ -1,5 +1,9 @@
 streamlit
+openai
 numpy
 matplotlib
 networkx
-openai
+
+# optional but recommended (robustness + compatibility)
+pillow
+requests
