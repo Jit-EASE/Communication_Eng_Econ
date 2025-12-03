@@ -1,88 +1,139 @@
-# tabs/tab5_rl.py
-
 import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
 
-from cdpem_core.rl_tuner import coarse_grid_search
+# --------------------------------------------------------------------
+# BASIC PID SIMILATION CORE (unchanged)
+# --------------------------------------------------------------------
+
+def simulate_pid(real_series, kp, ki, kd, target=0.0):
+    """
+    PID on real data.
+    real_series: np.array of the real dataset column
+    target: desired equilibrium level
+    """
+    n = len(real_series)
+    out = np.zeros(n)
+    ierr = 0.0
+    prev_err = 0.0
+
+    for t in range(n):
+        x = real_series[t]
+        err = x - target
+        ierr += err
+        derr = err - prev_err
+
+        out[t] = kp*err + ki*ierr + kd*derr
+        prev_err = err
+
+    return out
 
 
-def render(accent: str, get_figure, data_ctx: dict):
-    st.subheader("Policy Parameter Tuner (Coarse Search)")
-    st.write(
-        "RL-lite tuner for PID parameters, minimising a loss that combines "
-        "inflation volatility and policy effort. Dataset is optional context here."
-    )
+def loss_fn(real_series, pid_output):
+    """Minimise volatility + distance from target."""
+    return np.mean((real_series - pid_output)**2) + np.var(pid_output)
 
-    pi_target = st.slider("Target inflation (π*)", 0.0, 0.10, 0.02, step=0.005)
-    channel_sigma = st.slider("Channel noise σ", 0.0, 0.2, 0.05, step=0.01)
-    T = st.slider("Simulation horizon (T)", 50, 500, 200, step=10)
 
-    st.markdown("### Parameter search grids")
-    st.write("Keep the grid small initially to avoid heavy compute inside Streamlit.")
+def coarse_grid_search(real_series, target):
+    """Find best PID params for real dataset."""
+    best_loss = float("inf")
+    best_params = (0,0,0)
+    best_out = None
 
-    Kp_min, Kp_max = st.slider("Kp range", 0.0, 2.0, (0.2, 1.0), step=0.1)
-    Ki_min, Ki_max = st.slider("Ki range", 0.0, 0.2, (0.0, 0.1), step=0.01)
-    Kd_min, Kd_max = st.slider("Kd range", 0.0, 0.5, (0.0, 0.3), step=0.05)
+    for kp in [0.05, 0.1, 0.2, 0.3]:
+        for ki in [0.00, 0.01, 0.02]:
+            for kd in [0.00, 0.01]:
+                out = simulate_pid(real_series, kp, ki, kd, target)
+                L = loss_fn(real_series, out)
+                if L < best_loss:
+                    best_loss = L
+                    best_params = (kp, ki, kd)
+                    best_out = out
 
-    step_count = st.slider("Number of steps per dimension", 2, 6, 3)
+    return best_params, best_loss, best_out
 
-    if st.button("Run tuner"):
-        Kp_grid = np.linspace(Kp_min, Kp_max, step_count)
-        Ki_grid = np.linspace(Ki_min, Ki_max, step_count)
-        Kd_grid = np.linspace(Kd_min, Kd_max, step_count)
 
-        best_params, best_loss, best_hist = coarse_grid_search(
-            Kp_grid,
-            Ki_grid,
-            Kd_grid,
-            pi_target=pi_target,
-            channel_sigma=channel_sigma,
-            T=T,
-            seed=123,
+# --------------------------------------------------------------------
+# STREAMLIT TAB UI
+# --------------------------------------------------------------------
+
+def render(accent, get_figure, data_ctx):
+    st.markdown("### Policy Tuner (Real Dataset Enabled)")
+
+    df = data_ctx["df"]
+    numerics = data_ctx["numeric_cols"]
+
+    # ------------------------------------------------------------
+    # 1) If no dataset → fallback to simulated synthetic data
+    # ------------------------------------------------------------
+    if df is None or len(numerics) == 0:
+        st.warning("No numeric dataset found — running synthetic simulation.")
+
+        # create synthetic inflation for fallback
+        n = 120
+        t = np.arange(n)
+        real_series = 2.0 + 0.3*np.sin(0.1*t) + 0.1*np.random.randn(n)
+        target = 2.0
+
+    else:
+        # ------------------------------------------------------------
+        # 2) Choose a column from the uploaded dataset
+        # ------------------------------------------------------------
+        st.markdown("#### Select numeric column to tune against")
+        col = st.selectbox("Dataset Column:", numerics)
+
+        real_series = df[col].dropna().values.astype(float)
+        n = len(real_series)
+
+        # Auto-target suggestion as median or user selection
+        target = st.number_input(
+            "Target Level:",
+            value=float(np.median(real_series)),
+            step=0.1,
+            format="%.3f"
         )
 
-        if best_params is None or best_hist is None:
-            st.error("No parameters evaluated – check your grid.")
-            return
+    # ------------------------------------------------------------
+    # 3) RUN TUNER
+    # ------------------------------------------------------------
+    if st.button("Run PID Tuner"):
+        best_params, best_loss, best_out = coarse_grid_search(real_series, target)
+        kp, ki, kd = best_params
 
-        Kp_best, Ki_best, Kd_best = best_params
-
-        st.markdown("### Best parameters found")
-        st.write(
-            {
-                "Kp": Kp_best,
-                "Ki": Ki_best,
-                "Kd": Kd_best,
-                "Loss": best_loss,
-            }
+        st.success(
+            f"**Best Params:** kp={kp}, ki={ki}, kd={kd} | "
+            f"Loss={best_loss:.4f}"
         )
 
+        # ------------------------------------------------------------
+        # 4) Plot real vs PID output
+        # ------------------------------------------------------------
         fig = get_figure(accent)
-        fig.add_trace(
-            go.Scatter(
-                y=best_hist["pi_true"],
-                mode="lines",
-                name="True inflation",
-                hovertemplate="<b>t=%{x}</b><br>π=%{y:.4f}<br>",
-            )
-        )
+        fig.add_trace(go.Scatter(
+            y=real_series,
+            mode="lines",
+            name="Real Series",
+            hovertemplate="<b>Real</b><br>%{y:.4f}<br>"
+        ))
+
+        fig.add_trace(go.Scatter(
+            y=best_out,
+            mode="lines",
+            name="PID Output",
+            line=dict(dash="dash"),
+            hovertemplate="<b>PID</b><br>%{y:.4f}<br>"
+        ))
 
         fig.add_hline(
-            y=pi_target,
+            y=target,
             line=dict(color=accent, dash="dot"),
-            annotation_text="Target",
+            annotation_text="Target"
         )
 
         fig.update_layout(
-            title="Inflation Path with Tuned PID Parameters",
-            xaxis_title="Time",
-            yaxis_title="Inflation",
+            title=f"PID Tuning Result (Target={target})",
+            xaxis_title="Time Index",
+            yaxis_title="Value"
         )
 
         st.plotly_chart(fig, use_container_width=True)
-
-        st.write(
-            "This is still model-driven, but you can use insights from your real dataset "
-            "(e.g., volatility ranges) to calibrate reasonable grids for Kp, Ki, Kd."
-        )
