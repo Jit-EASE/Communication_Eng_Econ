@@ -3,6 +3,7 @@ openai
 numpy
 matplotlib
 networkx
+plotly
 
 # optional but recommended (robustness + compatibility)
 pillow
