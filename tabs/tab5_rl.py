@@ -2,12 +2,12 @@
 
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from cdpem_core.rl_tuner import coarse_grid_search
 
 
-def render() -> None:
+def render(accent: str, get_figure):
     st.subheader("Policy Parameter Tuner (Coarse Search)")
     st.write(
         "Primitive RL-lite tuner for PID parameters, minimising a loss that combines "
@@ -52,20 +52,35 @@ def render() -> None:
         st.write(
             {
                 "Kp": Kp_best,
-                "Ki": Ki_best,
+                "Ki": K_i_best if False else Ki_best,  # keep explicit names mentally
                 "Kd": Kd_best,
                 "Loss": best_loss,
             }
         )
 
-        fig, ax = plt.subplots()
-        ax.plot(best_hist["pi_true"], label="True inflation")
-        ax.axhline(pi_target, label="Target", linestyle=":")
-        ax.set_xlabel("Time")
-        ax.set_ylabel("Inflation")
-        ax.legend()
-        ax.set_title("Inflation path under tuned PID parameters")
-        st.pyplot(fig)
+        fig = get_figure(accent)
+        fig.add_trace(
+            go.Scatter(
+                y=best_hist["pi_true"],
+                mode="lines",
+                name="True inflation",
+                hovertemplate="<b>t=%{x}</b><br>π=%{y:.4f}<br>",
+            )
+        )
+
+        fig.add_hline(
+            y=pi_target,
+            line=dict(color=accent, dash="dot"),
+            annotation_text="Target",
+        )
+
+        fig.update_layout(
+            title="Inflation Path with Tuned PID Parameters",
+            xaxis_title="Time",
+            yaxis_title="Inflation",
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
 
         st.write(
             "This is a coarse search, not a full RL agent yet. But it already encodes "
