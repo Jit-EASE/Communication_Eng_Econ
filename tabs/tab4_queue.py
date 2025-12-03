@@ -1,12 +1,12 @@
 # tabs/tab4_queue.py
 
 import streamlit as st
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from cdpem_core.queues import simulate_mm1_queue
 
 
-def render() -> None:
+def render(accent: str, get_figure):
     st.subheader("Queueing & Congestion Dynamics")
     st.write(
         "M/M/1 queue as a minimal model of congestion in policy-relevant systems "
@@ -20,12 +20,23 @@ def render() -> None:
     if st.button("Simulate queue"):
         times, qs = simulate_mm1_queue(lmbda=lmbda, mu=mu, T=float(T), seed=42)
 
-        fig, ax = plt.subplots()
-        ax.plot(times, qs)
-        ax.set_xlabel("Time")
-        ax.set_ylabel("Queue length")
-        ax.set_title("Queue Dynamics (M/M/1)")
-        st.pyplot(fig)
+        fig = get_figure(accent)
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=qs,
+                mode="lines",
+                name="Queue length",
+                hovertemplate="<b>t:</b> %{x:.2f}<br><b>q(t):</b> %{y}<br>",
+            )
+        )
+        fig.update_layout(
+            title="Queue Dynamics (M/M/1)",
+            xaxis_title="Time",
+            yaxis_title="Queue Length",
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
 
         st.write(
             "When λ ≥ μ, the system tends to become unstable and queue length explodes. "
