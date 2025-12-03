@@ -10,16 +10,46 @@ from cdpem_core.networks import (
 )
 
 
-def render(accent: str, get_figure):
+def render(accent: str, get_figure, data_ctx: dict):
     st.subheader("Network View of Policy Transmission")
     st.write(
-        "Illustrative supply-chain network to think about structural bottlenecks "
-        "and critical nodes for policy signals."
+        "Build a network from your dataset (e.g., origin–destination, firm–firm) "
+        "or use the toy agri-food chain example."
     )
 
-    G = build_example_supply_chain()
-    degree_c, betweenness_c = compute_basic_centrality(G)
+    df = data_ctx.get("df")
+    cols = list(df.columns) if df is not None else []
 
+    mode = "Toy example"
+    if df is not None and len(cols) >= 2:
+        mode = st.radio(
+            "Network source",
+            ["Toy example", "Build from dataset"],
+            help="For dataset mode, select two columns representing source and target.",
+        )
+
+    if mode == "Toy example":
+        G = build_example_supply_chain()
+    else:
+        src_col = st.selectbox("Source column", cols)
+        tgt_col = st.selectbox("Target column", cols, index=min(1, len(cols) - 1))
+
+        # Build graph from pairs
+        G = nx.DiGraph()
+        for _, row in df[[src_col, tgt_col]].dropna().iterrows():
+            u = str(row[src_col])
+            v = str(row[tgt_col])
+            if u and v:
+                if G.has_edge(u, v):
+                    G[u][v]["weight"] += 1
+                else:
+                    G.add_edge(u, v, weight=1)
+
+        if G.number_of_nodes() == 0:
+            st.error("No valid edges found in dataset for selected columns.")
+            return
+
+    degree_c, betweenness_c = compute_basic_centrality(G)
     pos = nx.spring_layout(G, seed=42)
 
     xs = [pos[n][0] for n in G.nodes()]
@@ -35,7 +65,6 @@ def render(accent: str, get_figure):
 
     fig = get_figure(accent)
 
-    # edges
     fig.add_trace(
         go.Scatter(
             x=edge_x,
@@ -47,7 +76,6 @@ def render(accent: str, get_figure):
         )
     )
 
-    # nodes
     fig.add_trace(
         go.Scatter(
             x=xs,
@@ -66,7 +94,7 @@ def render(accent: str, get_figure):
     )
 
     fig.update_layout(
-        title="Supply Chain Network (Illustrative)",
+        title="Network View",
         showlegend=False,
         xaxis=dict(showticklabels=False),
         yaxis=dict(showticklabels=False),
@@ -81,7 +109,6 @@ def render(accent: str, get_figure):
     st.json(betweenness_c)
 
     st.write(
-        "Nodes with high betweenness centrality are structurally critical for policy "
-        "transmission. In a real system you would replace this toy graph with an Irish "
-        "agri-food, banking, or labour network."
+        "In dataset mode, this is a real structural representation of your system: "
+        "nodes with high betweenness are critical intermediaries for policy and information."
     )
