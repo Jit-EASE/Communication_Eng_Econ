@@ -1,12 +1,12 @@
 # tabs/tab1_control.py
 
 import streamlit as st
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from cdpem_core.engine import simulate_cdpm
 
 
-def render() -> None:
+def render(accent: str, get_figure):
     st.subheader("Kalman-Controlled Policy Dynamics")
     st.write(
         "Real-time state estimation, PID-like control, and a noisy policy channel "
@@ -40,23 +40,59 @@ def render() -> None:
             seed=42,
         )
 
-        # Inflation plot
-        fig1, ax1 = plt.subplots()
-        ax1.plot(hist["pi_true"], label="True inflation")
-        ax1.plot(hist["pi_hat"], label="Estimated inflation", linestyle="--")
-        ax1.axhline(pi_target, label="Target", linestyle=":")
-        ax1.set_xlabel("Time")
-        ax1.set_ylabel("Inflation")
-        ax1.legend()
-        ax1.set_title("Inflation dynamics")
-        st.pyplot(fig1)
+        hover_style = "<b>%{fullData.name}</b><br>t=%{x}<br>value=%{y:.4f}<br>"
+
+        # Inflation dynamics
+        fig1 = get_figure(accent)
+        fig1.add_trace(
+            go.Scatter(
+                y=hist["pi_true"],
+                mode="lines",
+                name="True inflation",
+                hovertemplate=hover_style,
+            )
+        )
+        fig1.add_trace(
+            go.Scatter(
+                y=hist["pi_hat"],
+                mode="lines",
+                name="Estimated inflation",
+                line=dict(dash="dash"),
+                hovertemplate=hover_style,
+            )
+        )
+        fig1.add_hline(
+            y=pi_target,
+            line=dict(color=accent, dash="dot"),
+            annotation_text="Target",
+        )
+        fig1.update_layout(
+            title="Inflation Dynamics", xaxis_title="Time", yaxis_title="Inflation"
+        )
+        st.plotly_chart(fig1, use_container_width=True)
 
         # Policy vs effective policy
-        fig2, ax2 = plt.subplots()
-        ax2.plot(hist["u"], label="Policy (designed)")
-        ax2.plot(hist["u_eff"], label="Policy (effective)", linestyle="--")
-        ax2.set_xlabel("Time")
-        ax2.set_ylabel("Policy instrument")
-        ax2.legend()
-        ax2.set_title("Policy signal vs noisy channel")
-        st.pyplot(fig2)
+        fig2 = get_figure(accent)
+        fig2.add_trace(
+            go.Scatter(
+                y=hist["u"],
+                mode="lines",
+                name="Policy (designed)",
+                hovertemplate=hover_style,
+            )
+        )
+        fig2.add_trace(
+            go.Scatter(
+                y=hist["u_eff"],
+                mode="lines",
+                name="Policy (effective)",
+                line=dict(dash="dash"),
+                hovertemplate=hover_style,
+            )
+        )
+        fig2.update_layout(
+            title="Policy Signal vs Noisy Channel",
+            xaxis_title="Time",
+            yaxis_title="Policy Instrument",
+        )
+        st.plotly_chart(fig2, use_container_width=True)
