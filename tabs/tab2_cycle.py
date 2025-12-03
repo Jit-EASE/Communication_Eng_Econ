@@ -1,13 +1,13 @@
 # tabs/tab2_cycle.py
 
 import streamlit as st
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from cdpem_core.engine import simulate_cdpm
 from cdpem_core.fft_cycle import compute_fft_spectrum
 
 
-def render() -> None:
+def render(accent: str, get_figure):
     st.subheader("Cycle Detection via FFT")
     st.write(
         "Spectral analysis of inflation under communication-driven policy dynamics."
@@ -38,15 +38,28 @@ def render() -> None:
             st.warning("Not enough data points to compute spectrum.")
             return
 
-        fig, ax = plt.subplots()
-        ax.plot(freqs, amps)
-        ax.set_xlabel("Frequency (cycles per period)")
-        ax.set_ylabel("Amplitude")
-        ax.set_title("Inflation Spectrum")
-        st.pyplot(fig)
+        fig = get_figure(accent)
+        fig.add_trace(
+            go.Scatter(
+                x=freqs,
+                y=amps,
+                mode="lines",
+                name="FFT Spectrum",
+                hovertemplate=(
+                    "<b>Frequency:</b> %{x:.4f}<br>"
+                    "<b>Amplitude:</b> %{y:.4f}<br>"
+                ),
+            )
+        )
+        fig.update_layout(
+            title="Inflation Spectrum (FFT)",
+            xaxis_title="Frequency (cycles per period)",
+            yaxis_title="Amplitude",
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
         st.write(
             "Peaks in the spectrum correspond to dominant inflation cycles. "
-            "In a communication-engineering framing, controller design can be "
-            "tuned to dampen these frequencies."
+            "In a communication-engineering framing, controller design can be tuned "
+            "to dampen specific frequencies."
         )
