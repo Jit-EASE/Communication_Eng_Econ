@@ -19,19 +19,19 @@ from tabs import (
 # ------------------------------------------
 
 TAB_MAP = {
-    "Control System (v0.1)": tab1_control,
-    "Cycle Analysis (v0.2)": tab2_cycle,
-    "Network View (v0.3)": tab3_network,
-    "Queueing / Congestion (v0.4)": tab4_queue,
-    "Policy Tuner (v0.5)": tab5_rl,
+    "Control System": tab1_control,
+    "Cycle Analysis": tab2_cycle,
+    "Network View": tab3_network,
+    "Queueing / Congestion": tab4_queue,
+    "Policy Tuner": tab5_rl,
 }
 
 TAB_COLORS = {
-    "Control System (v0.1)": "#00eaff",
-    "Cycle Analysis (v0.2)": "#ff47e8",
-    "Network View (v0.3)": "#5bff62",
-    "Queueing / Congestion (v0.4)": "#ffd447",
-    "Policy Tuner (v0.5)": "#ff6c47",
+    "Control System": "#00eaff",
+    "Cycle Analysis": "#ff47e8",
+    "Network View": "#5bff62",
+    "Queueing / Congestion": "#ffd447",
+    "Policy Tuner": "#ff6c47",
 }
 
 # ------------------------------------------
@@ -273,7 +273,7 @@ def render_data_hub(accent: str):
     init_data_ctx()
     data_ctx = st.session_state["data_ctx"]
 
-    st.markdown("### 📁 Data Hub — Global Dataset for All Modules")
+    st.markdown("### Data Hub — Global Dataset for All Modules")
 
     uploaded = st.file_uploader(
         "Upload dataset (CSV, Excel, JSON)",
