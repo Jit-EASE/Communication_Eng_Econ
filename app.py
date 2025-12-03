@@ -2,6 +2,8 @@
 
 import streamlit as st
 from openai import OpenAI
+import plotly.graph_objects as go
+import plotly.io as pio
 
 from tabs import (
     tab1_control,
@@ -29,14 +31,76 @@ TAB_COLORS = {
     "Policy Tuner (v0.5)": "#ff6c47",
 }
 
-# Create OpenAI client (expects OPENAI_API_KEY in Streamlit secrets or env)
-def get_openai_client():
-    api_key = st.secrets.get("OPENAI_API_KEY", None)  # or rely on env var
-    return OpenAI(api_key=api_key) if api_key else None
 
+def get_openai_client():
+    """
+    Create OpenAI client.
+
+    - If OPENAI_API_KEY is in st.secrets, use it.
+    - Otherwise rely on environment variable.
+    """
+    api_key = None
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY", None)
+    except Exception:
+        api_key = None
+
+    if api_key:
+        return OpenAI(api_key=api_key)
+    return OpenAI()  # will use env var if set
+
+
+# ---------- Plotly theme helpers ----------
+
+def make_plotly_template(accent: str = "#00eaff") -> None:
+    """
+    Define a Plotly template with glassmorphic background and crosshair spikes.
+    """
+    pio.templates["spectre"] = go.layout.Template(
+        layout=dict(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#f0f3ff"),
+            hoverlabel=dict(
+                bgcolor="rgba(10,10,20,0.80)",
+                bordercolor=accent,
+                font=dict(color="white")
+            ),
+            xaxis=dict(
+                gridcolor="rgba(255,255,255,0.10)",
+                zeroline=False,
+                showspikes=True,
+                spikemode="across",
+                spikesnap="cursor",
+                spikecolor=accent,
+                spikethickness=1.5,
+            ),
+            yaxis=dict(
+                gridcolor="rgba(255,255,255,0.10)",
+                zeroline=False,
+                showspikes=True,
+                spikemode="across",
+                spikesnap="cursor",
+                spikecolor=accent,
+                spikethickness=1.5,
+            ),
+        )
+    )
+    pio.templates.default = "spectre"
+
+
+def get_figure(accent: str = "#00eaff") -> go.Figure:
+    """
+    Create a new Plotly figure using the neon 'spectre' template.
+    """
+    make_plotly_template(accent)
+    return go.Figure()
+
+
+# ---------- CSS & Layout ----------
 
 def inject_css(accent: str):
-    """Load CSS theme with dynamic neon accent + typewriter header."""
+    """Load CSS theme with dynamic neon accent + typewriter header + page stack."""
     st.markdown(
         f"""
         <style>
@@ -64,6 +128,7 @@ def inject_css(accent: str):
             border-radius: 18px;
             background: rgba(8, 8, 14, 0.75);
             backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.05);
             box-shadow:
                 0 18px 40px rgba(0, 0, 0, 0.55),
@@ -217,7 +282,7 @@ def main():
 
     agent_on = st.sidebar.checkbox("Enable AI Margin Commentator")
 
-    # Main book container
+    # Book container
     st.markdown('<div class="book-shell">', unsafe_allow_html=True)
 
     # Depth layers
@@ -240,15 +305,21 @@ def main():
         unsafe_allow_html=True,
     )
 
+    # Render selected tab with access to accent + Plotly figure factory
     module = TAB_MAP[tab_name]
-    module.render()
+    module.render(accent, get_figure)
 
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Margin AI agent
+    # Margin AI analyst
     if agent_on:
-        client = get_openai_client()
+        client = None
+        try:
+            client = get_openai_client()
+        except Exception:
+            client = None
+
         st.markdown('<div class="agent-box">', unsafe_allow_html=True)
         st.markdown(
             '<div class="agent-title">Spectre.AI – Margin Analyst</div>',
@@ -265,7 +336,7 @@ def main():
             elif user_query.strip():
                 try:
                     completion = client.chat.completions.create(
-                        model="gpt-4o-mini",
+                        model="gpt-4.1-mini",
                         messages=[
                             {
                                 "role": "system",
