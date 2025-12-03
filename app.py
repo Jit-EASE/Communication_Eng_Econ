@@ -412,7 +412,13 @@ def main():
 
     init_log_ctx()
 
-    st.sidebar.title("CDEPM Orchestrator")
+    st.sidebar.title("Agentic Policy Engine for Control, Tensor Reasoning & Econometrics - HPC System")
+    st.sidebar.markdown(
+    "<div style='margin-top:-10px; font-size:0.85rem; color:#8ab4f8;'>"
+    "###System Architecture, Design and Engineering - **Shubhojit Bagchi** © 2025###"
+    "</div>",
+    unsafe_allow_html=True,
+    )
 
     tab_name = st.sidebar.radio("Module", list(TAB_MAP.keys()))
     accent = TAB_COLORS[tab_name]
